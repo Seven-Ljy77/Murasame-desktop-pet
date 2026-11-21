@@ -12,8 +12,7 @@ const DRAG_DISTANCE_PX = 7;
 const DRAG_HOLD_MS = 220;
 
 const dragging = ref(false);
-const { index, clickCount, setHovering, click } = useExpression();
-const debug = import.meta.env.DEV;
+const { index, setHovering, click } = useExpression();
 
 preloadExpressions();
 
@@ -104,6 +103,5 @@ onBeforeUnmount(() => {
       alt="丛雨"
       draggable="false"
     />
-    <output v-if="debug" class="pet-debug">img {{ index }} · click {{ clickCount }}</output>
   </main>
 </template>
