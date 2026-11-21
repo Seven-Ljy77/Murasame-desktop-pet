@@ -126,11 +126,17 @@ check("idle timer stays paused during sequence", snapshot.index, 13);
 // --- reset after 3s -------------------------------------------------------
 machine.setHovering(true);
 advance(3_000);
-check("sequence reset while hovering", snapshot.index, 2);
+check("sequence reset stays on hover face 2", snapshot.index, 2);
 check("sequence reset clears count", snapshot.clickCount, 0);
+
+advance(10_000);
+check("idle rotation stays frozen while hovering", snapshot.index, 2);
 
 machine.setHovering(false);
 check("after reset, back to image 1", snapshot.index, 1);
+
+advance(10_000);
+check("idle countdown restarts after leaving hover", snapshot.index !== 1, true);
 
 // --- a slow click does not chain ------------------------------------------
 machine.click();

@@ -10,8 +10,10 @@
  * - Hover: image 2.
  * - Clicks: consecutive clicks (each within `clickWindowMs` of the previous one)
  *   walk up a ladder: 1-2 -> 2, 3 -> 8, 4 -> 4, 5 -> 3, 6 -> 11, 7+ -> 13.
- * - `clickWindowMs` without a click resets the counter and returns to hover (2)
- *   or to idle image 1, restarting the idle countdown.
+ * - `clickWindowMs` without a click resets the counter: back to the hover face
+ *   (2) while the pointer stays on the pet, or to idle image 1 otherwise. The
+ *   idle countdown is frozen during hover and click sequences and only starts
+ *   again from image 1 once the pet is idle.
  * - Clicks inside `clickDebounceMs` after an accepted click are dropped, so a
  *   single physical click (or a long press repeating) cannot advance the ladder.
  */
@@ -154,6 +156,7 @@ export class ExpressionMachine {
 
   private scheduleIdle(): void {
     this.clearIdleTimer();
+    // Hovering and an open click sequence both freeze the idle rotation.
     if (this.disposed || this.hovering || this.clickCount > 0) return;
     this.idleTimer = this.deps.setTimer(() => {
       this.idleTimer = null;
@@ -170,6 +173,7 @@ export class ExpressionMachine {
       this.resetTimer = null;
       this.clickCount = 0;
       this.lastClickAt = null;
+      // Still hovering -> stay on the hover face; otherwise settle on image 1.
       this.show(this.hovering ? HOVER_INDEX : START_INDEX);
       this.emit();
       this.scheduleIdle();
