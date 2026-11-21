@@ -58,8 +58,8 @@ npm run tauri build
 
 产物：
 
-- 安装包：`src-tauri/target/release/bundle/nsis/`（`*-setup.exe`）
-- 免安装可执行文件：`src-tauri/target/release/MurasameDesktopPet.exe`
+- 安装包：`src-tauri/target/release/bundle/nsis/MurasameDesktopPet_0.1.0_x64-setup.exe`（约 6.5 MB）
+- 免安装可执行文件：`src-tauri/target/release/murasame-desktop-pet.exe`（约 15 MB）
 
 ## 使用
 
