@@ -26,6 +26,19 @@
         "skipTaskbar": true,
         "focus": false,
         "visible": false
+      },
+      {
+        "label": "settings",
+        "title": "丛雨桌宠 · 设置",
+        "url": "settings.html",
+        "width": 380,
+        "height": 210,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "visible": false
       }
     ],
     "security": {
