@@ -1,22 +1,27 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import petIdle from "./assets/pet/idle.png";
+import { EXPRESSION_SOURCES, preloadExpressions } from "./pet/expressions";
+import { useExpression } from "./pet/useExpression";
 
 /**
  * A press that moves further than this (or is held longer than the hold
- * timeout) is treated as a drag instead of a click. The native window drag
- * takes over from there, so the webview stops receiving pointer events.
+ * timeout) becomes a native window drag, so it must not also count as a click.
  */
 const DRAG_DISTANCE_PX = 7;
 const DRAG_HOLD_MS = 220;
 
 const dragging = ref(false);
+const { index, clickCount, setHovering, click } = useExpression();
+const debug = import.meta.env.DEV;
+
+preloadExpressions();
 
 let activePointer: number | null = null;
 let originX = 0;
 let originY = 0;
 let holdTimer: number | undefined;
+let pressBecameDrag = false;
 
 function clearHoldTimer(): void {
   if (holdTimer !== undefined) {
@@ -28,6 +33,7 @@ function clearHoldTimer(): void {
 async function beginDrag(): Promise<void> {
   if (dragging.value) return;
   dragging.value = true;
+  pressBecameDrag = true;
   clearHoldTimer();
   try {
     await invoke("begin_drag");
@@ -45,6 +51,7 @@ function onPointerDown(event: PointerEvent): void {
   activePointer = event.pointerId;
   originX = event.clientX;
   originY = event.clientY;
+  pressBecameDrag = false;
   clearHoldTimer();
   holdTimer = window.setTimeout(() => void beginDrag(), DRAG_HOLD_MS);
 }
@@ -59,6 +66,14 @@ function onPointerUp(event: PointerEvent): void {
   if (activePointer !== event.pointerId) return;
   activePointer = null;
   clearHoldTimer();
+  if (!pressBecameDrag) click();
+  pressBecameDrag = false;
+}
+
+function onPointerCancel(): void {
+  activePointer = null;
+  clearHoldTimer();
+  pressBecameDrag = false;
 }
 
 onBeforeUnmount(() => {
@@ -73,9 +88,17 @@ onBeforeUnmount(() => {
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
-    @pointercancel="onPointerUp"
+    @pointercancel="onPointerCancel"
+    @pointerenter="setHovering(true)"
+    @pointerleave="setHovering(false)"
     @contextmenu.prevent
   >
-    <img class="pet-art" :src="petIdle" alt="丛雨" draggable="false" />
+    <img
+      class="pet-art"
+      :src="EXPRESSION_SOURCES[index]"
+      alt="丛雨"
+      draggable="false"
+    />
+    <output v-if="debug" class="pet-debug">img {{ index }} · click {{ clickCount }}</output>
   </main>
 </template>

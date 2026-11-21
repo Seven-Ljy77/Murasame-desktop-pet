@@ -1,0 +1,162 @@
+[
+  {
+    "file": "01.png",
+    "index": 1,
+    "label": "微笑",
+    "source": "1·微笑.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "02.png",
+    "index": 2,
+    "label": "开心",
+    "source": "2·开心.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "03.png",
+    "index": 3,
+    "label": "震惊·害怕·担忧",
+    "source": "3·震惊;害怕;担忧.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "04.png",
+    "index": 4,
+    "label": "生气",
+    "source": "4·生气.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "05.png",
+    "index": 5,
+    "label": "无奈",
+    "source": "5·无奈.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "06.png",
+    "index": 6,
+    "label": "滑稽",
+    "source": "6·滑稽.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "07.png",
+    "index": 7,
+    "label": "大滑稽",
+    "source": "7·大滑稽.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "08.png",
+    "index": 8,
+    "label": "ho~？",
+    "source": "8·ho~？.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "09.png",
+    "index": 9,
+    "label": "靠谱吗...？",
+    "source": "9·靠谱吗...？.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "10.png",
+    "index": 10,
+    "label": "糟糕",
+    "source": "10·糟糕.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "11.png",
+    "index": 11,
+    "label": "可恶",
+    "source": "11·可恶.png",
+    "size": [
+      752,
+      751
+    ]
+  },
+  {
+    "file": "12.png",
+    "index": 12,
+    "label": "大可恶",
+    "source": "12·大可恶.png",
+    "size": [
+      752,
+      751
+    ]
+  },
+  {
+    "file": "13.png",
+    "index": 13,
+    "label": "大白鲨",
+    "source": "13·大白鲨.png",
+    "size": [
+      750,
+      750
+    ]
+  },
+  {
+    "file": "14.png",
+    "index": 14,
+    "label": "无奈の笑",
+    "source": "14·无奈の笑.png",
+    "size": [
+      727,
+      733
+    ]
+  },
+  {
+    "file": "15.png",
+    "index": 15,
+    "label": "喊·叫",
+    "source": "15·喊;叫.png",
+    "size": [
+      750,
+      750
+    ]
+  },
+  {
+    "file": "16.png",
+    "index": 16,
+    "label": "无语·无聊",
+    "source": "16·无语；无聊.png",
+    "size": [
+      750,
+      750
+    ]
+  }
+]
