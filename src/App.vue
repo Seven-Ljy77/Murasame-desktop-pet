@@ -36,12 +36,17 @@ async function beginDrag(): Promise<void> {
   pressBecameDrag = true;
   clearHoldTimer();
   try {
+    // Resolves once the native drag loop ends (mouse released).
     await invoke("begin_drag");
   } catch (error) {
     console.error("Unable to start window drag.", error);
   } finally {
     dragging.value = false;
     activePointer = null;
+    // Throttled saves during the drag can lag behind the final position.
+    void invoke("save_pet_position").catch((error) => {
+      console.error("Unable to persist the pet position.", error);
+    });
   }
 }
 

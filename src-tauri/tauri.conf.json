@@ -37,7 +37,7 @@
         "maximizable": false,
         "minimizable": false,
         "alwaysOnTop": true,
-        "center": true,
+        "center": false,
         "visible": false
       }
     ],

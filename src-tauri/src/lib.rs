@@ -1,17 +1,17 @@
 mod pet_window;
 mod tray;
 
-use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::sync::mpsc::{RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 use tauri::Manager;
 
-/// Window moves arrive in bursts while dragging; at most one disk write per
-/// interval keeps the state file fresh without hammering the disk.
-const POSITION_SAVE_INTERVAL: Duration = Duration::from_millis(400);
+/// How long the window must stay still before its position is written to disk.
+const POSITION_QUIET_PERIOD: Duration = Duration::from_millis(350);
 
-static LAST_POSITION_SAVE: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
+static POSITION_SENDER: OnceLock<Sender<(i32, i32)>> = OnceLock::new();
 
-struct PetState(Mutex<pet_window::PetSettings>);
+struct PetState(Arc<Mutex<pet_window::PetSettings>>);
 
 fn lock_settings<'a>(
     state: &'a tauri::State<'_, PetState>,
@@ -20,6 +20,49 @@ fn lock_settings<'a>(
         .0
         .lock()
         .map_err(|_| "the pet settings lock is poisoned".to_string())
+}
+
+/// Persists the position once the window has been still for a moment, so the
+/// last position of a drag is never lost to write throttling.
+fn start_position_saver(handle: tauri::AppHandle, shared: Arc<Mutex<pet_window::PetSettings>>) {
+    let (sender, receiver) = std::sync::mpsc::channel::<(i32, i32)>();
+    let _ = POSITION_SENDER.set(sender);
+
+    std::thread::spawn(move || {
+        let mut pending: Option<(i32, i32)> = None;
+        loop {
+            if pending.is_none() {
+                match receiver.recv() {
+                    Ok(position) => pending = Some(position),
+                    Err(_) => return,
+                }
+            }
+
+            loop {
+                match receiver.recv_timeout(POSITION_QUIET_PERIOD) {
+                    Ok(position) => pending = Some(position),
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => return,
+                }
+            }
+
+            let Some((x, y)) = pending.take() else {
+                continue;
+            };
+            let Ok(mut settings) = shared.lock() else {
+                continue;
+            };
+            settings.x = Some(x);
+            settings.y = Some(y);
+            let _ = pet_window::save(&handle, &settings);
+        }
+    });
+}
+
+fn report_position(x: i32, y: i32) {
+    if let Some(sender) = POSITION_SENDER.get() {
+        let _ = sender.send((x, y));
+    }
 }
 
 #[tauri::command]
@@ -57,21 +100,6 @@ fn set_pet_scale(
     Ok(applied)
 }
 
-fn position_save_due() -> bool {
-    let Ok(mut last_save) = LAST_POSITION_SAVE.lock() else {
-        return true;
-    };
-    let now = Instant::now();
-    let due = match *last_save {
-        Some(previous) => now.duration_since(previous) >= POSITION_SAVE_INTERVAL,
-        None => true,
-    };
-    if due {
-        *last_save = Some(now);
-    }
-    due
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -83,40 +111,43 @@ pub fn run() {
         ])
         .setup(|app| {
             let handle = app.handle().clone();
-            app.manage(PetState(Mutex::new(pet_window::load(&handle))));
+            let shared = Arc::new(Mutex::new(pet_window::load(&handle)));
+            app.manage(PetState(shared.clone()));
+            start_position_saver(handle.clone(), shared.clone());
 
             if let Some(window) = app.get_webview_window("pet") {
                 {
-                    let state = app.state::<PetState>();
-                    let mut settings = *state
-                        .0
+                    let mut settings = shared
                         .lock()
                         .map_err(|_| std::io::Error::other("pet settings lock poisoned"))?;
                     pet_window::restore(&window, &mut settings)?;
-                    *state
-                        .0
-                        .lock()
-                        .map_err(|_| std::io::Error::other("pet settings lock poisoned"))? =
-                        settings;
                 }
 
                 let event_handle = handle.clone();
+                let event_settings = shared.clone();
                 window.on_window_event(move |event| match event {
                     tauri::WindowEvent::Moved(position) => {
-                        let Some(state) = event_handle.try_state::<PetState>() else {
-                            return;
-                        };
                         // try_lock, never lock: blocking the main thread here
                         // would deadlock a command that is resizing the window.
-                        let Ok(mut guard) = state.0.try_lock() else {
-                            return;
+                        if let Ok(mut settings) = event_settings.try_lock() {
+                            settings.x = Some(position.x);
+                            settings.y = Some(position.y);
+                        }
+                        report_position(position.x, position.y);
+                    }
+                    // Windows rescales the window when it crosses a monitor with
+                    // a different DPI; physical sizing means we resize it back.
+                    tauri::WindowEvent::ScaleFactorChanged { .. } => {
+                        let mut settings = match event_settings.try_lock() {
+                            Ok(guard) => *guard,
+                            Err(_) => return,
                         };
-                        guard.x = Some(position.x);
-                        guard.y = Some(position.y);
-                        let snapshot = *guard;
-                        drop(guard);
-                        if position_save_due() {
-                            let _ = pet_window::save(&event_handle, &snapshot);
+                        if pet_window::handle_scale_factor_change(&event_handle, &mut settings)
+                            .is_ok()
+                        {
+                            if let Ok(mut guard) = event_settings.try_lock() {
+                                *guard = settings;
+                            }
                         }
                     }
                     // Closing the pet hides it; the tray menu owns quitting.
@@ -150,10 +181,8 @@ pub fn run() {
     app.run(|handle, event| {
         if let tauri::RunEvent::ExitRequested { .. } = event {
             if let Some(state) = handle.try_state::<PetState>() {
-                if let Ok(guard) = state.0.try_lock() {
-                    let snapshot = *guard;
-                    drop(guard);
-                    let _ = pet_window::save(handle, &snapshot);
+                if let Ok(settings) = state.0.lock() {
+                    let _ = pet_window::save(handle, &settings);
                 }
             }
         }

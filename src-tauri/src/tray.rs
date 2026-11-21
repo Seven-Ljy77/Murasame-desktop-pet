@@ -51,12 +51,19 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 
 fn set_visible(app: &AppHandle, visible: bool) {
     if let Some(window) = app.get_webview_window("pet") {
-        let _ = if visible { window.show() } else { window.hide() };
+        if visible {
+            // A display may have been unplugged while the pet was hidden.
+            let _ = crate::pet_window::ensure_on_screen(app);
+            let _ = window.show();
+        } else {
+            let _ = window.hide();
+        }
     }
 }
 
 fn open_settings(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("settings") {
+        let _ = crate::pet_window::center_settings(app);
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
@@ -67,8 +74,14 @@ fn reset_position(app: &AppHandle) {
     let Some(state) = app.try_state::<crate::PetState>() else {
         return;
     };
-    let Ok(mut settings) = state.0.lock() else {
+    let Ok(guard) = state.0.lock() else {
         return;
     };
-    let _ = crate::pet_window::reset_position(app, &mut settings);
+    let mut settings = *guard;
+    drop(guard);
+    if crate::pet_window::reset_position(app, &mut settings).is_ok() {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = settings;
+        }
+    }
 }
