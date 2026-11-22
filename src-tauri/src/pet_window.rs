@@ -21,10 +21,18 @@ pub struct PetSettings {
     pub y: Option<i32>,
     #[serde(default = "default_scale")]
     pub scale: f64,
+    #[serde(default = "default_volume")]
+    pub volume: f64,
+    #[serde(default)]
+    pub muted: bool,
 }
 
 fn default_scale() -> f64 {
     DEFAULT_PET_SCALE
+}
+
+fn default_volume() -> f64 {
+    0.6
 }
 
 impl Default for PetSettings {
@@ -33,6 +41,8 @@ impl Default for PetSettings {
             x: None,
             y: None,
             scale: DEFAULT_PET_SCALE,
+            volume: default_volume(),
+            muted: false,
         }
     }
 }

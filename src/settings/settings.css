@@ -127,3 +127,12 @@ body {
 .toggle-note.warning {
   color: #b4543c;
 }
+
+.toggle.inline {
+  align-items: center;
+  margin-top: 2px;
+}
+
+.toggle.inline input {
+  margin-top: 0;
+}

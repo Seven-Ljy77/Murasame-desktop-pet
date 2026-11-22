@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from "vue";
+import { onBeforeUnmount, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { EXPRESSION_SOURCES, preloadExpressions } from "./pet/expressions";
 import { useExpression } from "./pet/useExpression";
+import { VoicePlayer } from "./pet/voice";
 
 /**
  * A press that moves further than this (or is held longer than the hold
@@ -14,7 +16,34 @@ const DRAG_HOLD_MS = 220;
 const dragging = ref(false);
 const hovering = ref(false);
 const popping = ref(false);
-const { index, setHovering, click } = useExpression();
+const { index, clickCount, setHovering, click } = useExpression();
+
+const voice = new VoicePlayer();
+
+// A click hands the streak over to the voice rules; a silent change while idle
+// can only come from the 10s rotation.
+watch(clickCount, (count, previous) => {
+  if (count > previous) voice.onClickCount(count);
+});
+
+watch(index, (current) => {
+  if (clickCount.value === 0 && !hovering.value) voice.onIdleExpression(current);
+});
+
+void invoke<{ volume: number; muted: boolean }>("get_audio_settings")
+  .then((settings) => {
+    voice.setVolume(settings.volume);
+    voice.setMuted(settings.muted);
+  })
+  .catch((error) => console.error("Unable to read audio settings.", error));
+
+const stopVoiceListener = listen<{ volume: number; muted: boolean }>(
+  "voice-settings",
+  (event) => {
+    voice.setVolume(event.payload.volume);
+    voice.setMuted(event.payload.muted);
+  },
+);
 
 preloadExpressions();
 
@@ -111,6 +140,7 @@ function onContextMenu(): void {
   pressBecameDrag = false;
   hovering.value = false;
   setHovering(false);
+  voice.pause();
   void invoke("hide_pet").catch((error) => {
     console.error("Unable to hide the pet.", error);
   });
@@ -119,6 +149,7 @@ function onContextMenu(): void {
 onBeforeUnmount(() => {
   clearHoldTimer();
   window.clearTimeout(popTimer);
+  void stopVoiceListener.then((stop) => stop());
 });
 </script>
 

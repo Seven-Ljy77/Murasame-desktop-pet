@@ -1,13 +1,14 @@
 {
   "name": "murasame-desktop-pet",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "check": "vue-tsc --noEmit",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:voice": "node --test tools/test-voice-trigger.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.5",

@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 
 const percent = ref(100);
 let applying = false;
 let pending: number | null = null;
+
+interface AudioState {
+  volume: number;
+  muted: boolean;
+}
+
+const volume = ref(60);
+const muted = ref(false);
+let pushAudioTimer: number | undefined;
 
 interface AutostartState {
   enabled: boolean;
@@ -66,9 +76,50 @@ onMounted(async () => {
     autostartError.value = "读取开机自启状态失败";
     console.error("Unable to read autostart state.", error);
   }
+
+  try {
+    const audio = await invoke<AudioState>("get_audio_settings");
+    volume.value = Math.round(audio.volume * 100);
+    muted.value = audio.muted;
+  } catch (error) {
+    console.error("Unable to read audio settings.", error);
+  }
 });
 
-async function onAutostartChange(event: Event): Promise<void> {  const wanted = (event.target as HTMLInputElement).checked;
+function onVolumeInput(event: Event): void {
+  volume.value = Number((event.target as HTMLInputElement).value);
+  scheduleAudioPush();
+}
+
+function onMuteChange(event: Event): void {
+  muted.value = (event.target as HTMLInputElement).checked;
+  scheduleAudioPush();
+}
+
+/** Debounced so dragging the slider does not spam the disk. */
+function scheduleAudioPush(): void {
+  window.clearTimeout(pushAudioTimer);
+  pushAudioTimer = window.setTimeout(() => {
+    void pushAudio();
+  }, 120);
+}
+
+async function pushAudio(): Promise<void> {
+  try {
+    const state = await invoke<AudioState>("set_audio_settings", {
+      volume: volume.value / 100,
+      muted: muted.value,
+    });
+    volume.value = Math.round(state.volume * 100);
+    muted.value = state.muted;
+    await emit("voice-settings", { volume: state.volume, muted: state.muted });
+  } catch (error) {
+    console.error("Unable to save audio settings.", error);
+  }
+}
+
+async function onAutostartChange(event: Event): Promise<void> {
+  const wanted = (event.target as HTMLInputElement).checked;
   autostartBusy.value = true;
   autostartError.value = "";
   try {
@@ -105,6 +156,27 @@ async function onAutostartChange(event: Event): Promise<void> {  const wanted = 
         @input="onInput"
       />
       <div class="labels"><span>60%</span><span>160%</span></div>
+    </section>
+
+    <section class="card">
+      <div class="heading">
+        <h2>音量</h2>
+        <output class="value">{{ muted ? "静音" : volume + "%" }}</output>
+      </div>
+      <input
+        class="slider"
+        type="range"
+        min="0"
+        max="100"
+        step="5"
+        :value="volume"
+        aria-label="音量"
+        @input="onVolumeInput"
+      />
+      <label class="toggle inline">
+        <input type="checkbox" :checked="muted" @change="onMuteChange" />
+        <span class="toggle-text"><span class="toggle-title">静音</span></span>
+      </label>
     </section>
 
     <section class="card">

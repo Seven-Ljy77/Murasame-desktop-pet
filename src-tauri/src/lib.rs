@@ -97,6 +97,45 @@ fn get_pet_scale(state: tauri::State<'_, PetState>) -> Result<f64, String> {
     Ok(lock_settings(&state)?.scale)
 }
 
+#[derive(serde::Serialize)]
+struct AudioSettings {
+    volume: f64,
+    muted: bool,
+}
+
+#[tauri::command]
+fn get_audio_settings(state: tauri::State<'_, PetState>) -> Result<AudioSettings, String> {
+    let settings = { *lock_settings(&state)? };
+    Ok(AudioSettings {
+        volume: settings.volume,
+        muted: settings.muted,
+    })
+}
+
+#[tauri::command]
+fn set_audio_settings(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, PetState>,
+    volume: f64,
+    muted: bool,
+) -> Result<AudioSettings, String> {
+    let updated = {
+        let mut settings = lock_settings(&state)?;
+        settings.volume = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            settings.volume
+        };
+        settings.muted = muted;
+        *settings
+    };
+    pet_window::save(&app, &updated)?;
+    Ok(AudioSettings {
+        volume: updated.volume,
+        muted: updated.muted,
+    })
+}
+
 /// Whether the autostart entry can be written from this build.
 ///
 /// A `tauri dev` binary lives in `target/debug` and needs the Vite server, so
@@ -114,8 +153,7 @@ struct AutostartState {
 }
 
 #[tauri::command]
-fn get_autostart(app: tauri::AppHandle) -> Result<AutostartState, String> {
-    use tauri_plugin_autostart::ManagerExt;
+fn get_autostart(app: tauri::AppHandle) -> Result<AutostartState, String> {    use tauri_plugin_autostart::ManagerExt;
     let enabled = app
         .autolaunch()
         .is_enabled()
@@ -174,6 +212,8 @@ pub fn run() {
             reset_pet_position,
             get_pet_scale,
             set_pet_scale,
+            get_audio_settings,
+            set_audio_settings,
             get_autostart,
             set_autostart
         ])
