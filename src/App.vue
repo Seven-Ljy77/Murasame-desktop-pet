@@ -104,6 +104,18 @@ function onPointerCancel(): void {
   pressBecameDrag = false;
 }
 
+/** Right-click hides the pet; the tray icon brings it back. */
+function onContextMenu(): void {
+  clearHoldTimer();
+  activePointer = null;
+  pressBecameDrag = false;
+  hovering.value = false;
+  setHovering(false);
+  void invoke("hide_pet").catch((error) => {
+    console.error("Unable to hide the pet.", error);
+  });
+}
+
 onBeforeUnmount(() => {
   clearHoldTimer();
   window.clearTimeout(popTimer);
@@ -122,7 +134,7 @@ onBeforeUnmount(() => {
     @pointercancel="onPointerCancel"
     @pointerenter="enterHover"
     @pointerleave="leaveHover"
-    @contextmenu.prevent
+    @contextmenu.prevent="onContextMenu"
   >
     <div class="pet-breathe">
       <img

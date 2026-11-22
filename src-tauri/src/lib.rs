@@ -70,6 +70,15 @@ fn begin_drag(window: tauri::WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|error| error.to_string())
 }
 
+/// Right-clicking the pet hides it; the tray icon brings it back.
+#[tauri::command]
+fn hide_pet(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window("pet")
+        .ok_or_else(|| "pet window is missing".to_string())?;
+    window.hide().map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn reset_pet_position(
     app: tauri::AppHandle,
@@ -161,6 +170,7 @@ pub fn run() {
         ))
         .invoke_handler(tauri::generate_handler![
             begin_drag,
+            hide_pet,
             reset_pet_position,
             get_pet_scale,
             set_pet_scale,
