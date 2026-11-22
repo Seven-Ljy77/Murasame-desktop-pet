@@ -86,3 +86,44 @@ body {
   font-size: 11px;
   line-height: 1.5;
 }
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: #4d927d;
+  cursor: pointer;
+}
+
+.toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.toggle-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5a53;
+}
+
+.toggle-note {
+  color: #7a8881;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.toggle-note.warning {
+  color: #b4543c;
+}

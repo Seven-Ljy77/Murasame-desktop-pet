@@ -88,6 +88,58 @@ fn get_pet_scale(state: tauri::State<'_, PetState>) -> Result<f64, String> {
     Ok(lock_settings(&state)?.scale)
 }
 
+/// Whether the autostart entry can be written from this build.
+///
+/// A `tauri dev` binary lives in `target/debug` and needs the Vite server, so
+/// registering it would only produce a broken entry after the next logon. The
+/// env var is a deliberate escape hatch for exercising the real code path while
+/// developing.
+fn autostart_writable() -> bool {
+    !cfg!(debug_assertions) || std::env::var_os("MURASAME_DEV_AUTOSTART").is_some()
+}
+
+#[derive(serde::Serialize)]
+struct AutostartState {
+    enabled: bool,
+    available: bool,
+}
+
+#[tauri::command]
+fn get_autostart(app: tauri::AppHandle) -> Result<AutostartState, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let enabled = app
+        .autolaunch()
+        .is_enabled()
+        .map_err(|error| format!("is_enabled: {error}"))?;
+    Ok(AutostartState {
+        enabled,
+        available: autostart_writable(),
+    })
+}
+
+#[tauri::command]
+fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<AutostartState, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    if !autostart_writable() {
+        return Err("开发模式下的程序不写入开机自启".to_string());
+    }
+    let manager = app.autolaunch();
+    if enabled {
+        manager.enable().map_err(|error| format!("enable: {error}"))?;
+    } else {
+        manager
+            .disable()
+            .map_err(|error| format!("disable: {error}"))?;
+    }
+    let now = manager
+        .is_enabled()
+        .map_err(|error| format!("is_enabled: {error}"))?;
+    Ok(AutostartState {
+        enabled: now,
+        available: true,
+    })
+}
+
 #[tauri::command]
 fn set_pet_scale(
     app: tauri::AppHandle,
@@ -103,11 +155,17 @@ fn set_pet_scale(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             begin_drag,
             reset_pet_position,
             get_pet_scale,
-            set_pet_scale
+            set_pet_scale,
+            get_autostart,
+            set_autostart
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -173,6 +231,17 @@ pub fn run() {
             }
 
             tray::create(&handle).map_err(|error| format!("create tray icon: {error}"))?;
+
+            // Dev helper: `MURASAME_OPEN_SETTINGS=1` pops the settings window at
+            // startup so it can be inspected without clicking through the tray.
+            #[cfg(debug_assertions)]
+            if std::env::var_os("MURASAME_OPEN_SETTINGS").is_some() {
+                if let Some(window) = app.get_webview_window("settings") {
+                    let _ = pet_window::center_settings(&handle);
+                    let _ = window.show();
+                }
+            }
+
             Ok(())
         })
         .build(tauri::generate_context!())
