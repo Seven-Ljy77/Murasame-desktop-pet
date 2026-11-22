@@ -1,4 +1,4 @@
-"""Batch-apply remove_outline.py to a folder of emote PNGs.
+﻿"""Batch-apply remove_outline.py to a folder of emote PNGs.
 
 Outputs NN.png (source order) plus a manifest.json describing each expression,
 so the frontend can map files to Chinese labels without non-ASCII filenames.
@@ -36,7 +36,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source")
     parser.add_argument("output")
-    parser.add_argument("--keep-inner", action="store_true")
+    parser.add_argument(
+        "--repaint-inner",
+        action="store_true",
+        help="repaint enclosed separators instead of leaving them white",
+    )
     args = parser.parse_args()
 
     source_dir = Path(args.source)
@@ -51,7 +55,7 @@ def main() -> None:
     print(f"{'file':<12} {'source':<24} {'size':<10} {'outer':>7} {'inner':>6} {'repaint':>8}")
     for index, path in enumerate(files, start=1):
         with Image.open(path) as image:
-            result, stats = remove_outline(image, fill_inner=not args.keep_inner)
+            result, stats = remove_outline(image, fill_inner=args.repaint_inner)
         name = f"{index:02d}.png"
         result.save(output_dir / name)
         manifest.append(

@@ -8,24 +8,22 @@ Pipeline
 --------
 1. White is "every channel >= 235 with some opacity". The outline plus its
    antialiased fringe matches that; the pale green hair does not.
-2. Flood fill from the canvas border through white/transparent pixels marks the
-   part of the outline that touches the outside world; that part is cut out of
-   the alpha channel.
-3. Where hair or clothing is drawn on top of the outline, the stroke is chopped
-   into enclosed islands. Those are found as white components that never touch
-   the border and are then *repainted* (not cut), because cutting them would
-   punch see-through slits. Only thin islands near the silhouette qualify;
-   eye highlights sit deep inside the character and are left alone.
-4. Repainted islands borrow the nearest real artwork colour, preferring the
-   left neighbour (the outline runs along hair locks, so that is the hair
-   colour), and the mask is dilated first so the semitransparent fringe goes
-   with it.
-5. The cut silhouette gets a 0.7px alpha blur, and colours are grown outward
+2. Starting from the white pixels that touch the transparent background, walk
+   through white pixels only. Everything reached that way is the stroke and is
+   cut out of the alpha channel. White artwork (a shirt, a collar) is simply not
+   reachable this way, because the walk would have to cross non-white pixels —
+   this is what keeps white clothing intact while still removing the whole
+   outline, including the odd chunky corner.
+3. Optional (`--repaint-inner`): where hair or clothing chops the stroke into
+   enclosed islands, repaint those islands with neighbouring artwork colours
+   instead of cutting them, so no see-through slivers appear. It slightly
+   thickens hair locks, so it is off by default.
+4. The cut silhouette gets a 0.7px alpha blur, and colours are grown outward
    first, keeping the new edge free of white.
 
 Usage:
     python remove_outline.py <input.png> <output.png> [--debug <tint.png>]
-                             [--keep-inner]
+                             [--repaint-inner]
 """
 
 from __future__ import annotations
@@ -49,11 +47,11 @@ MAX_INSCRIBED_RADIUS = 24
 MAX_COLOUR_SEARCH = 80
 
 
-def distance_to_transparent(alpha: np.ndarray) -> np.ndarray:
-    """Chamfer distance from every pixel to the nearest fully transparent one."""
-    height, width = alpha.shape
+def chamfer_distance(sources: np.ndarray) -> np.ndarray:
+    """Chamfer distance from every pixel to the nearest source pixel."""
+    height, width = sources.shape
     inf = 10 ** 6
-    dist = np.where(alpha == 0, 0, inf).astype(np.int32)
+    dist = np.where(sources, 0, inf).astype(np.int32)
     for y in range(1, height):
         dist[y] = np.minimum(dist[y], dist[y - 1] + 1)
     for y in range(height - 2, -1, -1):
@@ -63,6 +61,11 @@ def distance_to_transparent(alpha: np.ndarray) -> np.ndarray:
     for x in range(width - 2, -1, -1):
         dist[:, x] = np.minimum(dist[:, x], dist[:, x + 1] + 1)
     return dist
+
+
+def distance_to_transparent(alpha: np.ndarray) -> np.ndarray:
+    """Chamfer distance from every pixel to the nearest fully transparent one."""
+    return chamfer_distance(alpha == 0)
 
 
 def flood_from_border(passable: np.ndarray) -> np.ndarray:
@@ -93,6 +96,33 @@ def flood_from_border(passable: np.ndarray) -> np.ndarray:
     return visited
 
 
+def white_connected_to_silhouette(white: np.ndarray, transparent: np.ndarray) -> np.ndarray:
+    """White pixels reachable from the silhouette by walking through white only.
+
+    This is the stroke: the outline band touches the transparent background and
+    is itself white, so the walk follows it all the way around. White artwork
+    inside the character (a shirt, eye highlights) is not reachable this way
+    unless it literally merges into the stroke, and even then only the merged
+    part would be affected.
+    """
+    height, width = white.shape
+    padded = np.pad(transparent, 1, constant_values=False)
+    seeds = white & (
+        padded[:-2, 1:-1] | padded[2:, 1:-1] | padded[1:-1, :-2] | padded[1:-1, 2:]
+    )
+
+    visited = seeds.copy()
+    queue: deque[tuple[int, int]] = deque(zip(*np.nonzero(seeds)))
+    while queue:
+        y, x = queue.popleft()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < height and 0 <= nx < width and white[ny, nx] and not visited[ny, nx]:
+                visited[ny, nx] = True
+                queue.append((ny, nx))
+    return visited
+
+
 def inscribed_radius(component: np.ndarray) -> int:
     """How many 4-neighbour erosions a component survives."""
     mask = component
@@ -114,13 +144,13 @@ def inscribed_radius(component: np.ndarray) -> int:
     return radius
 
 
-def enclosed_white_islands(white: np.ndarray, reachable: np.ndarray):
-    """Yield (mask, inscribed_radius) for white components enclosed by artwork."""
+def white_islands(white: np.ndarray):
+    """Yield (component_mask, inscribed_radius) for each connected white blob."""
     height, width = white.shape
     labelled = np.zeros((height, width), dtype=bool)
     for sy in range(height):
         for sx in range(width):
-            if not white[sy, sx] or reachable[sy, sx] or labelled[sy, sx]:
+            if not white[sy, sx] or labelled[sy, sx]:
                 continue
             queue = deque([(sy, sx)])
             labelled[sy, sx] = True
@@ -132,7 +162,7 @@ def enclosed_white_islands(white: np.ndarray, reachable: np.ndarray):
                     for dx in (-1, 0, 1):
                         ny, nx = y + dy, x + dx
                         if 0 <= ny < height and 0 <= nx < width:
-                            if white[ny, nx] and not reachable[ny, nx] and not labelled[ny, nx]:
+                            if white[ny, nx] and not labelled[ny, nx]:
                                 labelled[ny, nx] = True
                                 queue.append((ny, nx))
             component = np.zeros((height, width), dtype=bool)
@@ -219,7 +249,7 @@ def pad_colours(colour: np.ndarray, known: np.ndarray, passes: int) -> np.ndarra
 def remove_outline(
     source: Image.Image,
     debug_path: str | None = None,
-    fill_inner: bool = True,
+    fill_inner: bool = False,
 ) -> tuple[Image.Image, dict]:
     array = np.array(source.convert("RGBA"))
     rgb = array[:, :, :3].astype(np.int16)
@@ -228,27 +258,42 @@ def remove_outline(
     white = (rgb.min(axis=2) >= WHITE_MIN_CHANNEL) & (alpha > 0)
     transparent = alpha == 0
 
-    reachable = flood_from_border(white | transparent)
-    outer_ring = reachable & white
-
     silhouette_distance = distance_to_transparent(alpha)
-    inner = np.zeros(alpha.shape, dtype=bool)
-    islands_found = 0
-    islands_selected = 0
-    for component, radius in enclosed_white_islands(white, reachable):
-        islands_found += 1
-        if component.sum() < INNER_MIN_AREA:
-            continue
-        nearest = int(silhouette_distance[component].min())
-        if radius <= INNER_MAX_RADIUS and nearest <= INNER_MAX_SILHOUETTE_DISTANCE:
-            inner |= component
-            islands_selected += 1
+
+    # Cut every white pixel the silhouette can reach by walking through white.
+    # The stroke qualifies because it touches the background; white artwork
+    # inside the character does not, because reaching it would mean walking
+    # through the character first.
+    reachable = white_connected_to_silhouette(white, transparent)
+    outer_ring = reachable
 
     shape = (alpha > 0) & ~outer_ring
 
+    outside = flood_from_border(~shape)
+    sealed = outer_ring & ~outside
+
+    inner = np.zeros(alpha.shape, dtype=bool)
+    islands_found = 0
+    islands_selected = 0
+    if fill_inner:
+        # Optional pass: keep the separators opaque and colour them with the
+        # surrounding artwork. It avoids see-through slivers, but it also makes
+        # hair locks look a little thicker, so it is off by default.
+        shape |= sealed
+        inner = sealed.copy()
+        for component, radius in white_islands(white & ~outer_ring):
+            islands_found += 1
+            if component.sum() < INNER_MIN_AREA:
+                continue
+            nearest = int(silhouette_distance[component].min())
+            if radius <= INNER_MAX_RADIUS and nearest <= INNER_MAX_SILHOUETTE_DISTANCE:
+                inner |= component
+                islands_selected += 1
+
     colour = rgb.copy()
     if fill_inner and inner.any():
-        hole = dilate(inner, INNER_MASK_DILATION) & ~outer_ring
+        # Stay inside the character so the silhouette itself is left alone.
+        hole = (dilate(inner, INNER_MASK_DILATION) | sealed) & shape
         sources = (alpha > 0) & (rgb.min(axis=2) < COLOUR_SOURCE_MAX_WHITENESS) & ~hole
         colour = repaint_from_neighbours(rgb, sources, hole)
 
@@ -283,14 +328,14 @@ def main() -> None:
     parser.add_argument("output")
     parser.add_argument("--debug", default=None)
     parser.add_argument(
-        "--keep-inner",
+        "--repaint-inner",
         action="store_true",
-        help="leave enclosed separators untouched",
+        help="also repaint enclosed separators (makes hair locks look thicker)",
     )
     args = parser.parse_args()
 
     source = Image.open(args.input)
-    result, stats = remove_outline(source, args.debug, not args.keep_inner)
+    result, stats = remove_outline(source, args.debug, args.repaint_inner)
     result.save(args.output)
     print(f"{args.input} -> {args.output} {result.size[0]}x{result.size[1]}")
     for key, value in stats.items():

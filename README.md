@@ -50,6 +50,15 @@ npm run tauri dev
 
 首次编译 Rust 依赖需要几分钟。前端支持热更新，Rust 改动会自动重编译重启。
 
+其他脚本：
+
+| 命令 | 作用 |
+|---|---|
+| `npm run dev` | 只起 Vite 前端（不带 Tauri 窗口，调试页面样式用） |
+| `npm run check` | `vue-tsc --noEmit`，只做类型检查 |
+| `npm run build` | 类型检查 + 打包前端到 `dist/` |
+| `npm run tauri build` | 完整构建，出 exe 和安装包 |
+
 ## 构建
 
 ```powershell
@@ -60,6 +69,8 @@ npm run tauri build
 
 - 安装包：`src-tauri/target/release/bundle/nsis/MurasameDesktopPet_0.1.0_x64-setup.exe`（约 6.5 MB）
 - 免安装可执行文件：`src-tauri/target/release/murasame-desktop-pet.exe`（约 15 MB）
+
+安装包未做代码签名，首次运行 Windows SmartScreen 会拦一下，点「更多信息 → 仍要运行」即可。
 
 ## 使用
 
@@ -85,7 +96,9 @@ npm run tauri build
 ├─ index.html                 桌宠页面入口
 ├─ settings.html              设置窗页面入口
 ├─ src/
+│  ├─ main.ts                 桌宠窗口挂载入口
 │  ├─ App.vue                 桌宠窗口：渲染表情 + 指针事件（点击/拖动）
+│  ├─ styles.css              透明背景、图片贴合窗口底部
 │  ├─ pet/
 │  │  ├─ config.ts            时间参数
 │  │  ├─ expressions.ts       表情索引 → 图片，含预加载
@@ -97,32 +110,44 @@ npm run tauri build
 │  ├─ tauri.conf.json         窗口配置（透明/置顶/尺寸/CSP）
 │  ├─ capabilities/           权限（pet + settings 窗口）
 │  └─ src/
+│     ├─ main.rs              程序入口
 │     ├─ lib.rs               命令注册、事件、位置落盘
 │     ├─ pet_window.rs        窗口定位/缩放/多屏夹取 + 单元测试
 │     └─ tray.rs              托盘菜单
-└─ tools/
-   ├─ remove_outline.py       单张图去白描边
-   └─ batch_remove_outline.py 批量处理表情包
+├─ tools/
+│  ├─ remove_outline.py       单张图去白描边
+│  ├─ batch_remove_outline.py 批量处理表情包
+│  └─ finish_bottom.py        底部补回衣服 + 裁白条（见「素材处理」）
+└─ docs/                      README 用的对比图
 ```
 
 ## 素材处理
 
 原图是「从雨表情包2.0」的 16 张 PNG，自带约 10px 纯白描边，在深色壁纸上会像贴纸边框。处理流程：
 
-1. 从画布四边泛洪，挖掉与外界连通的白边；
-2. 被头发/衣领截断的封闭白条按「细 + 贴近轮廓」筛出，用邻近颜色重绘（不挖空，避免露缝）；
-3. 重建 0.7px 抗锯齿，并把颜色向外扩，防止新边缘吸白。
+1. 判白：RGB 三通道都 ≥ 235 且不透明；
+2. 从**贴着透明背景的白色像素**出发，只沿白色像素扩散，凡是能走到的都算描边、整片切掉（顶部突起的白三角、底部白条这类边角也能一并清掉）；
+3. 人物内部的白色（衬衫、高光）走不到——中间隔着非白像素——因此会被完整保留；
+4. **默认只切不补**：发丝之间的白缝会变成细透明缝，不会让发丝看起来变粗；
+5. 可选 `--repaint-inner`：把因遮挡而封闭的白条用邻近颜色补上，避免透明细缝（代价是发丝略粗）；
+6. 重建 0.7px 抗锯齿，并把颜色向外扩，防止新边缘吸白；
+7. 底部单独处理（`finish_bottom.py`）：原图是齐胸截断的，白边正压在切口上，和衬衫是同一片白色，靠局部规则分不开。所以先把底部一条带里被切掉的像素**从原图整体补回**（这里确实是衣服），再裁掉底部那条 8px 纯白贴纸条，最后在该带内重跑一次「切掉与背景连通的白」，把补回来的描边毛边重新去掉。这样衣服完整、白条也干净。底部没有白条的 5 张（11、12、13、15、16）会被自动跳过，输出与批处理结果完全一致。
 
-重新生成：
+![底部处理前后对比](docs/bottom-fix.png)
+
+重新生成（需要 Python 3.10+ 以及 `Pillow`、`numpy`）：
 
 ```powershell
 python tools\batch_remove_outline.py "素材目录" src\assets\pet
+python tools\finish_bottom.py "素材目录" src\assets\pet
+# 需要补色模式时：
+python tools\batch_remove_outline.py "素材目录" src\assets\pet --repaint-inner
 ```
 
 ## 已知限制
 
 - 悬停按窗口矩形判定，人物周围的透明角落也会触发
-- 16 张原图有 727×733 / 750×750 / 752×751 三种画布，切换时约 3% 缩放差异（未做归一化）
+- 16 张图有 727×725 / 750×750 / 752×751 三种画布（底部裁过白条的那 11 张是 727×725），切换时约 3% 缩放差异（未做归一化）
 - 多显示器相关逻辑（跨屏 DPI、拔屏兜底）有单元测试，但尚未在真实双屏环境验证
 - 暂未支持：开机自启、单实例、全屏应用避让、逐像素命中（点击穿透）
 
