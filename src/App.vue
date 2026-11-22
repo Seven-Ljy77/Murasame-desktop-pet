@@ -12,6 +12,8 @@ const DRAG_DISTANCE_PX = 7;
 const DRAG_HOLD_MS = 220;
 
 const dragging = ref(false);
+const hovering = ref(false);
+const popping = ref(false);
 const { index, setHovering, click } = useExpression();
 
 preloadExpressions();
@@ -20,7 +22,26 @@ let activePointer: number | null = null;
 let originX = 0;
 let originY = 0;
 let holdTimer: number | undefined;
+let popTimer: number | undefined;
 let pressBecameDrag = false;
+
+function pop(): void {
+  popping.value = true;
+  window.clearTimeout(popTimer);
+  popTimer = window.setTimeout(() => {
+    popping.value = false;
+  }, 140);
+}
+
+function enterHover(): void {
+  hovering.value = true;
+  setHovering(true);
+}
+
+function leaveHover(): void {
+  hovering.value = false;
+  setHovering(false);
+}
 
 function clearHoldTimer(): void {
   if (holdTimer !== undefined) {
@@ -70,7 +91,10 @@ function onPointerUp(event: PointerEvent): void {
   if (activePointer !== event.pointerId) return;
   activePointer = null;
   clearHoldTimer();
-  if (!pressBecameDrag) click();
+  if (!pressBecameDrag) {
+    pop();
+    click();
+  }
   pressBecameDrag = false;
 }
 
@@ -82,6 +106,7 @@ function onPointerCancel(): void {
 
 onBeforeUnmount(() => {
   clearHoldTimer();
+  window.clearTimeout(popTimer);
 });
 </script>
 
@@ -89,19 +114,23 @@ onBeforeUnmount(() => {
   <main
     class="pet-stage"
     :data-dragging="dragging ? 'true' : 'false'"
+    :data-hovering="hovering ? 'true' : 'false'"
+    :data-popping="popping ? 'true' : 'false'"
     @pointerdown="onPointerDown"
     @pointermove="onPointerMove"
     @pointerup="onPointerUp"
     @pointercancel="onPointerCancel"
-    @pointerenter="setHovering(true)"
-    @pointerleave="setHovering(false)"
+    @pointerenter="enterHover"
+    @pointerleave="leaveHover"
     @contextmenu.prevent
   >
-    <img
-      class="pet-art"
-      :src="EXPRESSION_SOURCES[index]"
-      alt="丛雨"
-      draggable="false"
-    />
+    <div class="pet-breathe">
+      <img
+        class="pet-art"
+        :src="EXPRESSION_SOURCES[index]"
+        alt="丛雨"
+        draggable="false"
+      />
+    </div>
   </main>
 </template>
